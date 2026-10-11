@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Time · The rise and fall of the dinosaurs</title>
+  <meta name="description" content="Walk 165 million years in 3D: from a small runner in a Triassic desert to the giants, the last forests, and the morning the sky caught fire.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Instrument+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js",
+      "gsap/ScrollTrigger": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/ScrollTrigger.js",
+      "lenis": "https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="world" aria-hidden="true"></canvas>
+  <div class="flash" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="loader" aria-hidden="true"><span>Settling the sediment</span></div>
+
+  <header class="nav">
+    <a class="brand" href="#hero">Deep Time</a>
+    <nav aria-label="Eras">
+      <a href="#origins">Triassic</a>
+      <a href="#giants">Jurassic</a>
+      <a href="#forests">Cretaceous</a>
+      <a href="#impact">Impact</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1. Arrival: the camera settles into a Triassic desert -->
+    <section id="hero" class="act act--hero" data-t="0" data-mood="triassic">
+      <div class="hero__copy scrim">
+        <h1 class="display split">Walk through deep <em>time</em>.</h1>
+        <p class="lede">Dinosaurs ruled the land for more than 160 million years. This is the long road from a small runner in a Triassic desert to the morning the sky caught fire.</p>
+      </div>
+      <p class="meta hero__meta">Move across the ground. You'll leave tracks.</p>
+    </section>
+
+    <!-- 2. Origins: pinned kinetic lines while the camera crosses the desert -->
+    <section id="origins" class="act act--origins" data-t="0.04" data-mood="triassic">
+      <div class="origins__stage">
+        <p class="origins__line">252 million years ago, the world has just survived its worst extinction.</p>
+        <p class="origins__line">One continent. Mostly desert.</p>
+        <p class="origins__line">Around 230 million years ago, something small stands up on two legs.</p>
+        <p class="origins__line origins__line--last">It is a metre long. Nothing is afraid of it <em>yet</em>.</p>
+      </div>
+    </section>
+
+    <!-- 3. Giants: Jurassic, wipe reveal -->
+    <section id="giants" class="act act--giants" data-t="0.36" data-mood="jurassic">
+      <div class="giants">
+        <figure class="giants__frame reveal">
+          <img src="assets/jurassic.jpg" alt="Paleoart of Brachiosaurus wading through a misty river among tall conifers" width="1080" height="1080" loading="lazy">
+        </figure>
+        <div class="giants__text scrim">
+          <p class="meta">Jurassic · 201 to 145 million years ago</p>
+          <h2 class="title split">Then they got <em>enormous</em>.</h2>
+          <p>Another extinction at the end of the Triassic cleared the field. Pangaea began to split, the climate turned warm and wet, and conifer forests spread across the land.</p>
+          <p>Sauropods like Brachiosaurus grew past twenty metres long and held their heads high above the treetops, while plated Stegosaurus grazed the ferns below.</p>
+          <ul class="tags"><li>Brachiosaurus</li><li>Stegosaurus</li><li>Allosaurus</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. The last forests: card grows to full bleed (calm before the peak) -->
+    <section id="forests" class="act act--forests" data-t="0.52" data-mood="cretaceous">
+      <div class="forests__stage">
+        <h2 class="forests__title title">The last <em>forests</em>.</h2>
+        <figure class="forests__card">
+          <img src="assets/cretaceous.jpg" alt="Paleoart of a Tyrannosaurus rex stepping out of a flowering forest, Triceratops grazing behind" width="1600" height="904">
+        </figure>
+        <div class="forests__caption">
+          <p class="meta">Cretaceous · 145 to 66 million years ago</p>
+          <p>Flowering plants spread across every continent. Many small theropods wore feathers. For the final few million years, Tyrannosaurus and Triceratops shared the same floodplains of western North America.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Impact: the peak. Dark, pinned, scroll scrubs the film -->
+    <section id="impact" class="act act--impact" data-t="0.68" data-mood="impact">
+      <div class="impact__stage">
+        <div class="impact__text">
+          <p class="meta">66 million years ago</p>
+          <h2 class="title">The sky caught <em>fire</em>.</h2>
+          <p class="impact__p">A rock about ten kilometres across struck what is now the Yucatán Peninsula, at roughly twenty kilometres per second.</p>
+          <p class="impact__p">Molten debris rained around the planet. Soot and dust blocked the sun for years, and photosynthesis almost stopped.</p>
+          <p class="impact__p">About three quarters of all species vanished. Every dinosaur that could not fly went with them.</p>
+        </div>
+        <figure class="impact__film">
+          <video src="assets/impact-film.mp4" poster="assets/impact.jpg" muted playsinline preload="auto" aria-label="The asteroid crosses the sky, a flash, then a scorched and silent plain"></video>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 6. Survivors: interactive amber -->
+    <section id="survivors" class="act act--survivors" data-t="0.86" data-mood="ash">
+      <div class="survivors">
+        <div class="survivors__stage" id="amber-stage">
+          <canvas id="amber" aria-label="Interactive 3D piece of amber with a feathered tail inside"></canvas>
+          <p class="survivors__hint meta">Drag to turn · Hover to hold it to the light</p>
+        </div>
+        <div class="survivors__text scrim">
+          <h2 class="title split">Some of them had <em>feathers</em>.</h2>
+          <p>In the dark years, small feathered dinosaurs that could live on seeds made it through. Ferns were the first plants to cover the ash.</p>
+          <p>Feathers were nothing new. This piece of amber holds a feathered dinosaur tail, trapped 99 million years ago.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Close: dawn, birds lift off -->
+    <section id="close" class="act act--close" data-t="0.96" data-mood="dawn">
+      <div class="close scrim">
+        <h2 class="display split">They never <em>left</em>.</h2>
+        <p class="lede">Birds are living dinosaurs, the last branch of the theropods. The three-toed track you've been leaving across this page is still made every morning, by a pigeon.</p>
+        <a class="cta" href="#hero">Walk it again</a>
+      </div>
+      <footer class="foot meta">
+        <span>Built in Three.js. Paleoart images are AI-generated illustrations.</span>
+        <span>252 to 66 million years ago</span>
+      </footer>
+    </section>
+  </main>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
