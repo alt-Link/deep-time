@@ -197,8 +197,9 @@ em { font-style: italic; }
   border-radius: 999px;
 }
 
-.split .w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .1em; margin-bottom: -.1em; }
-.split .w > span { display: inline-block; will-change: transform; }
+/* SplitText masks: room for descenders so the clip never cuts a g or y */
+.word-mask { padding-bottom: .1em; margin-bottom: -.1em; vertical-align: top; }
+.line-mask { padding-bottom: .06em; margin-bottom: -.06em; }
 
 /* soft scrim behind text blocks only */
 .scrim { position: relative; isolation: isolate; }
@@ -438,10 +439,10 @@ em { font-style: italic; }
   border-radius: 999px;
   text-decoration: none;
   font-weight: 500;
-  transition: transform .4s var(--ease-out), background-color .4s var(--ease-out);
+  transition: background-color .4s var(--ease-out); /* transform belongs to GSAP */
 }
 .cta::after { content: "↑"; transition: transform .4s var(--ease-out); }
-.cta:hover { background: var(--rust); transform: translateY(-2px); }
+.cta:hover { background: var(--rust); }
 .cta:hover::after { transform: translateY(-3px); }
 .foot {
   width: 100%;

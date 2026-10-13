@@ -3,9 +3,10 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { SplitText } from 'gsap/SplitText';
 import Lenis from 'lenis';
 
-gsap.registerPlugin(ScrollTrigger);
+gsap.registerPlugin(ScrollTrigger, SplitText);
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isMobile = matchMedia('(max-width: 820px)').matches;
@@ -388,14 +389,17 @@ function creature(spec) {
     return g;
   };
 
+  let jaw = null;
   const neck = limb(spec.neck.pts, spec.neck.r0, spec.neck.r1, (g, end) => {
     const head = new THREE.Mesh(ellipsoid(...spec.head.r, 10), spec.head.mat ? skin(spec.head.mat) : mat);
     head.position.set(end[0] + (spec.head.o || 0), end[1], end[2]);
     head.rotation.z = spec.head.tilt || 0;
     g.add(head);
     if (spec.head.jaw) {
-      const jaw = new THREE.Mesh(ellipsoid(...spec.head.jaw, 8), mat);
-      jaw.position.set(end[0] + (spec.head.o || 0) + spec.head.r[0] * 0.15, end[1] - spec.head.r[1] * 0.6, end[2]);
+      // pivot at the back of the jaw so it can swing open
+      const hinge = spec.head.jaw[0] * 0.85;
+      jaw = new THREE.Mesh(ellipsoid(...spec.head.jaw, 8).translate(hinge, 0, 0), mat);
+      jaw.position.set(end[0] + (spec.head.o || 0) + spec.head.r[0] * 0.15 - hinge, end[1] - spec.head.r[1] * 0.6, end[2]);
       g.add(jaw);
     }
   });
@@ -416,7 +420,9 @@ function creature(spec) {
 
   if (spec.extras) spec.extras(rig, mat);
   root.scale.setScalar(spec.scale || 1);
-  return { root, rig, neck, tail, legs, spec };
+  // offsets that GSAP timelines animate on top of the procedural gait
+  const pose = { neck: 0, jaw: 0, lean: 0, halt: 0, shake: 0 };
+  return { root, rig, neck, tail, legs, jaw, pose, spec };
 }
 
 const SPECIES = {
@@ -556,7 +562,7 @@ const PLACEMENTS = [
   ['trike', -19, -176, 0, 0, 2.6, null, true],
   ['trike', -10, -182, 3, 0.7, 1.3],
   ['trike', 18, -206, 0, 0, 4.1, null, true],
-  ['rex', 5, -164, 8, 1.9, 4.4],
+  ['rex', 9, -163, 0, 0, -2.4], // stands right of the forest card, turned toward the clearing, so its roar is seen
   // the plain where they watch the sky
   ['hadro', -9, -262, 0, 0, 0.3, null, true],
   ['hadro', -4, -271, 0, 0, 5.6, null, true],
@@ -566,7 +572,7 @@ PLACEMENTS.forEach(([kind, cx, cz, r, speed, phase, scale, graze, color]) => {
   const spec = SPECIES[kind](color);
   if (scale) spec.scale = scale;
   const c = creature(spec);
-  Object.assign(c, { cx, cz, r, speed, phase, graze: !!graze, kind });
+  Object.assign(c, { cx, cz, r, speed, phase, graze: !!graze, kind, travel: 0 });
   if (!r) {
     c.root.position.set(cx, H(cx, cz), cz);
     c.root.rotation.y = phase;
@@ -575,18 +581,18 @@ PLACEMENTS.forEach(([kind, cx, cz, r, speed, phase, scale, graze, color]) => {
   herd.push(c);
 });
 
-const tmpV = new THREE.Vector3();
-function animateHerd(t, lookUp) {
+function animateHerd(t, dt, lookUp) {
   herd.forEach((c) => {
-    const { spec } = c;
+    const { spec, pose } = c;
     let moving = 0;
     if (c.r) {
-      const a = c.phase + (t * c.speed) / c.r;
+      c.travel += dt * c.speed * (1 - pose.halt);
+      const a = c.phase + c.travel / c.r;
       const x = c.cx + Math.cos(a) * c.r, z = c.cz + Math.sin(a) * c.r;
       const dx = -Math.sin(a), dz = Math.cos(a);
       c.root.position.set(x, H(x, z), z);
       c.root.rotation.y = Math.atan2(-dz, dx);
-      moving = 1;
+      moving = 1 - pose.halt;
     }
     const f = t * spec.gait + c.phase * 3;
     c.legs.forEach((g) => { g.rotation.z = Math.sin(f + g.userData.phase) * spec.swing * moving; });
@@ -601,6 +607,10 @@ function animateHerd(t, lookUp) {
       c.neck.rotation.y = Math.sin(t * 0.6 + c.phase) * 0.08;
       c.neck.rotation.z = Math.sin(f) * 0.03;
     }
+    c.neck.rotation.z += pose.neck;
+    c.neck.rotation.y += Math.sin(t * 31) * 0.07 * pose.shake;
+    c.rig.rotation.z = pose.lean;
+    if (c.jaw) c.jaw.rotation.z = -pose.jaw;
   });
 }
 
@@ -621,22 +631,25 @@ flock.add(birdBody, wingL, wingR);
 world.add(flock);
 const birdData = Array.from({ length: BIRDS }, (_, i) => {
   const r = rng(i + 40);
-  return { r: 8 + r() * 22, h: 6 + r() * 14, a: r() * TAU, w: (0.12 + r() * 0.12) * (r() < 0.5 ? 1 : -1), flap: 7 + r() * 4, ph: r() * TAU, s: 1.4 + r() * 1.2, cz: -366 + r() * 14 };
+  return { r: 8 + r() * 22, h: 6 + r() * 14, a: r() * TAU, w: (0.12 + r() * 0.12) * (r() < 0.5 ? 1 : -1), flap: 7 + r() * 4, ph: r() * TAU, s: 1.4 + r() * 1.2, cz: -366 + r() * 14, lift: 0 };
 });
 const bq = new THREE.Quaternion(), fq = new THREE.Quaternion(), bm = new THREE.Matrix4(), bs = new THREE.Vector3(), bp = new THREE.Vector3();
 const axisY = new THREE.Vector3(0, 1, 0), axisX = new THREE.Vector3(1, 0, 0);
-function animateBirds(t, rise) {
-  flock.visible = rise > 0.001;
+function animateBirds(t, dt) {
+  flock.visible = camera.position.z < -280;
   if (!flock.visible) return;
   birdData.forEach((b, i) => {
-    const a = b.a + t * b.w;
-    bp.set(Math.cos(a) * b.r, 1.2 + b.h * rise + Math.sin(t * 0.7 + b.ph) * 0.8, b.cz + Math.sin(a) * b.r * 0.6);
+    b.a += dt * b.w * b.lift; // they only circle once airborne
+    const a = b.a;
+    const x = Math.cos(a) * b.r, z = b.cz + Math.sin(a) * b.r * 0.6;
+    bp.set(x, H(x, z) + 0.12 + (b.h + Math.sin(t * 0.7 + b.ph) * 0.8) * b.lift, z);
     const heading = Math.atan2(-Math.cos(a) * 0.6 * b.w, -Math.sin(a) * b.w);
     bq.setFromAxisAngle(axisY, heading);
     bs.setScalar(b.s);
     bm.compose(bp, bq, bs);
     birdBody.setMatrixAt(i, bm);
-    const flap = Math.sin(t * b.flap + b.ph) * 0.7;
+    // folded on the ground, beating hard on take-off, easing into a glide
+    const flap = b.lift > 0.01 ? Math.sin(t * b.flap * (1.6 - b.lift * 0.6) + b.ph) * 0.75 : -1.2;
     fq.setFromAxisAngle(axisX, -flap).premultiply(bq);
     bm.compose(bp, fq, bs);
     wingL.setMatrixAt(i, bm);
@@ -890,12 +903,13 @@ addEventListener('pointerdown', (e) => {
 
 const clock = new THREE.Clock();
 const intro = { lift: reduced ? 0 : 1 };
-const impact = { q: 0 }; // 0..1 across the impact chapter (from its top entering view)
-const closeState = { p: 0 };
+// everything the impact does to the world, animated by one scrubbed GSAP timeline below
+const fx = { fall: 0, after: 0, flash: 0, boom: 0, light: 0.3, ember: 0, lookUp: 0, shake: 0, rumble: 0 };
 let camT = 0;
 const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 const flashEl = document.querySelector('.flash');
+const tmpShake = new THREE.Vector3();
 let lastFlash = -1;
 
 function frame() {
@@ -917,6 +931,8 @@ function frame() {
     camPos.y - pointer.sy * 0.2 + breathe + intro.lift * 14,
     camPos.z + intro.lift * 18,
   );
+  const shake = reduced ? 0 : fx.shake * 0.45 + fx.rumble * 0.07;
+  if (shake) camera.position.add(tmpShake.set(Math.sin(time * 67) * shake, Math.sin(time * 83 + 1) * shake * 0.7, 0));
   camLook.x += pointer.sx * 1.4;
   camLook.y -= pointer.sy * 0.7 + intro.lift * 4;
   camera.lookAt(camLook);
@@ -933,82 +949,68 @@ function frame() {
   scene.environmentIntensity = mood.env;
   renderer.toneMappingExposure = mood.exposure;
 
-  // impact choreography, keyed to impact.q; flash at q = 0.62
-  const q = impact.q;
-  const fall = Math.pow(ss(0.0, 0.62, q), 1.6);
-  const inFlight = q > 0.005 && q < 0.622;
+  // impact: fx is scrubbed by impactTl, here it is only applied
+  const inFlight = impactTl.progress() > 0.005 && !fx.after;
   fireball.visible = inFlight;
   trail.forEach((s, i) => {
     s.visible = inFlight;
-    s.position.lerpVectors(IMPACT_FROM, IMPACT_AT, Math.max(0, fall - (i + 1) * 0.012));
+    s.position.lerpVectors(IMPACT_FROM, IMPACT_AT, Math.max(0, fx.fall - (i + 1) * 0.012));
   });
-  fireball.position.lerpVectors(IMPACT_FROM, IMPACT_AT, fall);
-  fireCore.scale.setScalar(26 + fall * 26 + Math.sin(time * 30) * 1.5);
-  const boom = ss(0.62, 0.95, q);
-  const after = q >= 0.62 ? 1 : 0;
-  dome.visible = horizonGlow.visible = after === 1 && mood.glow > 0.01;
-  dome.scale.set(30 + boom * 190, (30 + boom * 190) * 0.55, 30 + boom * 190);
-  dome.material.opacity = (0.95 - boom * 0.7) * mood.glow;
-  horizonGlow.material.opacity = (0.35 + (1 - boom) * 0.6) * mood.glow;
-  const flash = ss(0.585, 0.62, q) * (1 - ss(0.63, 0.75, q));
-  if (Math.abs(flash - lastFlash) > 0.002) { flashEl.style.opacity = (flash * 0.92).toFixed(3); lastFlash = flash; }
-  impactLight.position.copy(after ? IMPACT_AT : fireball.position).sub(camera.position).normalize().multiplyScalar(50).add(camera.position);
+  fireball.position.lerpVectors(IMPACT_FROM, IMPACT_AT, fx.fall);
+  fireCore.scale.setScalar(26 + fx.fall * 26 + Math.sin(time * 30) * 1.5);
+  dome.visible = horizonGlow.visible = fx.after === 1 && mood.glow > 0.01;
+  const ring = 30 + fx.boom * 190;
+  dome.scale.set(ring, ring * 0.55, ring);
+  dome.material.opacity = (0.95 - fx.boom * 0.7) * mood.glow;
+  horizonGlow.material.opacity = (0.35 + (1 - fx.boom) * 0.6) * mood.glow;
+  if (Math.abs(fx.flash - lastFlash) > 0.002) { flashEl.style.opacity = (fx.flash * 0.92).toFixed(3); lastFlash = fx.flash; }
+  impactLight.position.copy(fx.after ? IMPACT_AT : fireball.position).sub(camera.position).normalize().multiplyScalar(50).add(camera.position);
   impactLight.target.position.copy(camera.position);
-  impactLight.intensity = (after ? 4 * (1 - ss(0.62, 0.85, q)) + 0.5 : 0.3 + 4 * Math.pow(fall, 3)) * mood.glow;
-  const ashAmt = mood.ash * ss(0.6, 0.72, q);
-  printUniforms.uEmber.value = mood.ember * ss(0.6, 0.72, q);
-  animateAsh(dt, ashAmt, mood.ember * ss(0.6, 0.7, q), time);
+  impactLight.intensity = fx.light * mood.glow;
+  printUniforms.uEmber.value = mood.ember * fx.ember;
+  animateAsh(dt, mood.ash * fx.ember, mood.ember * fx.ember, time);
 
-  animateHerd(time, ss(0.25, 0.55, q));
-  animateBirds(time, closeState.p);
+  animateHerd(time, dt, fx.lookUp);
+  animateBirds(time, dt);
 
   renderer.render(scene, camera);
 }
 
 /* ------------------------------------------------------------------ page motion */
 
-function splitWords(el) {
-  const walk = (node) => {
-    [...node.childNodes].forEach((child) => {
-      if (child.nodeType === 3) {
-        const frag = document.createDocumentFragment();
-        child.textContent.split(/(\s+)/).forEach((part) => {
-          if (!part) return;
-          if (/^\s+$/.test(part)) { frag.append(' '); return; }
-          const w = document.createElement('span');
-          w.className = 'w';
-          const inner = document.createElement('span');
-          inner.textContent = part;
-          w.append(inner);
-          frag.append(w);
-        });
-        child.replaceWith(frag);
-      } else if (child.nodeType === 1) {
-        walk(child);
-      }
+// headings rise word by word out of a mask
+const heroSplit = SplitText.create('#hero h1', { type: 'words', mask: 'words', wordsClass: 'word' });
+if (!reduced) {
+  document.querySelectorAll('.split').forEach((el) => {
+    if (el.closest('#hero')) return;
+    SplitText.create(el, {
+      type: 'words', mask: 'words', wordsClass: 'word',
+      onSplit: (self) => gsap.from(self.words, {
+        yPercent: 110, duration: 1.2, ease: 'expo.out', stagger: 0.05,
+        scrollTrigger: { trigger: el, start: 'top 82%' },
+      }),
     });
-  };
-  walk(el);
-  return el.querySelectorAll('.w > span');
-}
-
-const heroWords = splitWords(document.querySelector('#hero h1'));
-document.querySelectorAll('.split').forEach((el) => {
-  if (el.closest('#hero')) return;
-  const words = splitWords(el);
-  if (reduced) return;
-  gsap.from(words, {
-    yPercent: 110, duration: 1.2, ease: 'expo.out', stagger: 0.05,
-    scrollTrigger: { trigger: el, start: 'top 82%' },
   });
-});
+
+  // body copy arrives line by line; autoSplit re-splits on resize and font load
+  document.querySelectorAll('.giants__text p:not(.meta), .survivors__text p, .close .lede').forEach((el) => {
+    SplitText.create(el, {
+      type: 'lines', mask: 'lines', linesClass: 'line', autoSplit: true,
+      onSplit: (self) => gsap.from(self.lines, {
+        yPercent: 105, duration: 1, ease: 'power3.out', stagger: 0.08,
+        scrollTrigger: { trigger: el, start: 'top 86%' },
+      }),
+    });
+  });
+}
 
 function heroIntro() {
   if (reduced) return;
   const tl = gsap.timeline();
   tl.to(intro, { lift: 0, duration: 3.6, ease: 'power3.inOut' }, 0)
-    .from(heroWords, { yPercent: 115, duration: 1.4, ease: 'expo.out', stagger: 0.08 }, 1.1)
-    .from('#hero .lede, #hero .hero__meta', { opacity: 0, y: 20, duration: 1.2, ease: 'power2.out', stagger: 0.14 }, 1.7);
+    .from(heroSplit.words, { yPercent: 115, duration: 1.4, ease: 'expo.out', stagger: 0.08 }, 1.1)
+    .from('#hero .lede, #hero .hero__meta', { opacity: 0, y: 20, duration: 1.2, ease: 'power2.out', stagger: 0.14 }, 1.7)
+    .from('.brand, .nav nav a', { opacity: 0, y: -14, duration: 0.9, ease: 'power3.out', stagger: 0.07 }, 2.2);
 }
 
 if (!reduced) {
@@ -1017,8 +1019,9 @@ if (!reduced) {
   const otl = gsap.timeline({ scrollTrigger: { trigger: '#origins', start: 'top top', end: 'bottom bottom', scrub: 0.8 } });
   lines.forEach((line, i) => {
     const last = i === lines.length - 1;
-    otl.fromTo(line, { opacity: 0, yPercent: 30, filter: 'blur(10px)' },
-      { opacity: 1, yPercent: 0, filter: 'blur(0px)', duration: 1, ease: 'power2.out' }, i * 2.2);
+    const { words } = SplitText.create(line, { type: 'words' });
+    otl.to(line, { opacity: 1, duration: 0.3 }, i * 2.2)
+      .from(words, { opacity: 0, yPercent: 45, filter: 'blur(8px)', duration: 0.7, ease: 'power2.out', stagger: 0.06 }, i * 2.2);
     if (!last) otl.to(line, { opacity: 0, yPercent: -25, filter: 'blur(8px)', duration: 0.9, ease: 'power2.in' }, i * 2.2 + 1.5);
   });
   otl.to({}, { duration: 1.2 });
@@ -1027,6 +1030,10 @@ if (!reduced) {
   gsap.to('.giants__frame', {
     clipPath: 'inset(0% 0% 0% 0% round 4px)', ease: 'none',
     scrollTrigger: { trigger: '.giants__frame', start: 'top 85%', end: 'top 35%', scrub: 0.6 },
+  });
+  gsap.from('.giants .tags li', {
+    opacity: 0, y: 16, scale: 0.9, duration: 0.7, ease: 'back.out(2)', stagger: 0.08,
+    scrollTrigger: { trigger: '.giants .tags', start: 'top 90%' },
   });
   gsap.fromTo('.giants__frame img', { yPercent: -12 }, {
     yPercent: 0, ease: 'none',
@@ -1045,21 +1052,92 @@ if (!reduced) {
 
   // impact: the film opens, then the story arrives line by line
   const itl = gsap.timeline({ scrollTrigger: { trigger: '#impact', start: 'top top', end: 'bottom bottom', scrub: 0.5 } });
-  itl.to('.impact__film', { clipPath: 'inset(0% 0% 0% 0%)', duration: 1, ease: 'power2.inOut' }, 0)
+  const impactTitle = SplitText.create('.impact__text .title', { type: 'words,chars' });
+  itl.from(impactTitle.chars, { opacity: 0, yPercent: 50, filter: 'blur(6px)', duration: 0.5, stagger: 0.02, ease: 'power2.out' }, 0)
+    .to('.impact__film', { clipPath: 'inset(0% 0% 0% 0%)', duration: 1, ease: 'power2.inOut' }, 0)
     .to('.impact__p', { opacity: 1, y: 0, duration: 0.8, stagger: 1.5, ease: 'power2.out' }, 0.6)
     .to({}, { duration: 1.4 });
+
+  // survivors: the amber's case opens out of the dark
+  gsap.fromTo('.survivors__stage', { clipPath: 'inset(14% 14% 14% 14% round 10px)', scale: 0.94 }, {
+    clipPath: 'inset(0% 0% 0% 0% round 10px)', scale: 1, ease: 'power2.out',
+    scrollTrigger: { trigger: '.survivors__stage', start: 'top 90%', end: 'top 40%', scrub: 0.6 },
+  });
+  gsap.from('.survivors__hint', {
+    opacity: 0, y: 8, duration: 0.8, ease: 'power2.out',
+    scrollTrigger: { trigger: '.survivors__stage', start: 'top 45%' },
+  });
+
+  // close: the button and footer settle in after the headline
+  gsap.timeline({ scrollTrigger: { trigger: '#close', start: 'top 60%' } })
+    .from('.cta', { opacity: 0, y: 30, scale: 0.92, duration: 0.9, ease: 'back.out(1.8)' }, 0.5)
+    .from('.foot span', { opacity: 0, y: 12, duration: 0.8, ease: 'power2.out', stagger: 0.12 }, 0.8);
+
+  // the button leans toward the cursor
+  const cta = document.querySelector('.cta');
+  const ctaX = gsap.quickTo(cta, 'x', { duration: 0.5, ease: 'power3.out' });
+  const ctaY = gsap.quickTo(cta, 'y', { duration: 0.5, ease: 'power3.out' });
+  cta.addEventListener('pointermove', (e) => {
+    const r = cta.getBoundingClientRect();
+    ctaX((e.clientX - r.left - r.width / 2) * 0.35);
+    ctaY((e.clientY - r.top - r.height / 2) * 0.35);
+  });
+  cta.addEventListener('pointerleave', () => { ctaX(0); ctaY(0); });
+
+  // the nav steps aside while you read downward and returns when you scroll back
+  const navY = gsap.quickTo('.nav', 'yPercent', { duration: 0.5, ease: 'power3.out' });
+  ScrollTrigger.create({
+    start: 0, end: 'max',
+    onUpdate: (self) => navY(self.direction === 1 && self.scroll() > innerHeight * 0.6 ? -110 : 0),
+  });
 }
 
-// one progress value for the whole impact chapter, from its top entering view
+/* ---------- GSAP in the 3D world ---------- */
+
+// the impact as one timeline over chapter progress (0: its top enters view, 1: its end).
+// The flash sits at 0.62, which is where the film's own flash lands.
+const impactTl = gsap.timeline({ paused: true, defaults: { ease: 'none' } })
+  .to(fx, { fall: 1, duration: 0.62, ease: 'power1.in' }, 0)
+  .to(fx, { light: 4.3, duration: 0.62, ease: 'power3.in' }, 0)
+  .to(fx, { lookUp: 1, duration: 0.3, ease: 'sine.inOut' }, 0.25)
+  .to(fx, { flash: 1, duration: 0.035, ease: 'power2.in' }, 0.585)
+  .to(fx, { ember: 1, duration: 0.12 }, 0.6)
+  .to(fx, { shake: 1, duration: 0.01 }, 0.612)
+  .set(fx, { after: 1 }, 0.62)
+  .fromTo(fx, { light: 4.5 }, { light: 0.5, duration: 0.23, ease: 'power2.out', immediateRender: false }, 0.62)
+  .to(fx, { boom: 1, duration: 0.33, ease: 'power2.out' }, 0.62)
+  .to(fx, { flash: 0, duration: 0.12, ease: 'power1.out' }, 0.63)
+  .to(fx, { shake: 0, duration: 0.2, ease: 'power2.out' }, 0.632)
+  .set({}, {}, 1);
 ScrollTrigger.create({
   trigger: '#impact', start: 'top bottom', end: 'bottom bottom',
-  onUpdate: (self) => { impact.q = self.progress; },
-  onRefresh: (self) => { impact.q = self.progress; },
+  animation: impactTl, scrub: true,
 });
-// the survivors and the close sit after the impact, keep q at its end there
+
+// the T. rex stops, rears up and roars as the last forests arrive
+const rex = herd.find((c) => c.kind === 'rex');
+const roar = gsap.timeline({ paused: true })
+  .to(rex.pose, { halt: 1, duration: 0.6, ease: 'power2.out' }, 0)
+  .to(rex.pose, { lean: 0.12, neck: 0.38, duration: 0.7, ease: 'power3.out' }, 0.2)
+  .to(rex.pose, { jaw: 0.6, duration: 0.35, ease: 'back.out(3)' }, 0.55)
+  .to(rex.pose, { shake: 1, duration: 0.2 }, 0.6)
+  .to(fx, { rumble: 1, duration: 0.15 }, 0.6)
+  .to(fx, { rumble: 0, duration: 1.4, ease: 'power2.out' }, 0.8)
+  .to(rex.pose, { shake: 0, duration: 0.6 }, 1.6)
+  .to(rex.pose, { jaw: 0, neck: 0, lean: 0, duration: 0.9, ease: 'power2.inOut' }, 2.0)
+  .to(rex.pose, { halt: 0, duration: 1.2, ease: 'power1.in' }, 2.4);
 ScrollTrigger.create({
-  trigger: '#survivors', start: 'top bottom', end: 'max',
-  onToggle: (self) => { if (self.isActive) impact.q = 1; },
+  trigger: '#forests', start: 'top 55%',
+  onEnter: () => roar.restart(),
+});
+
+// the birds burst off the ash as the close arrives, and settle again if you scroll back up
+const takeOff = gsap.timeline({ paused: true })
+  .to(birdData, { lift: 1, duration: 2.8, ease: 'power2.out', stagger: { each: 0.035, from: 'random' } });
+ScrollTrigger.create({
+  trigger: '#close', start: 'top 80%',
+  onEnter: () => takeOff.timeScale(1).play(),
+  onLeaveBack: () => takeOff.timeScale(1.6).reverse(),
 });
 
 // scrub the film: flash in the film (its midpoint) lines up with q = 0.62
@@ -1072,25 +1150,28 @@ ScrollTrigger.create({
     if (video.duration) videoTarget = p * (video.duration - 0.05);
   },
 });
+// a muted play/pause wakes a decoder that never played (iOS) or was suspended while hidden
+const wakeVideo = () => video.play().then(() => video.pause()).catch(() => {});
+let seekSince = 0;
 gsap.ticker.add(() => {
-  if (video.readyState >= 2 && !video.seeking && Math.abs(video.currentTime - videoTarget) > 0.02) {
+  if (video.seeking) {
+    // a seek that started in a hidden tab can stall forever; nudge it
+    if (!seekSince) seekSince = performance.now();
+    else if (performance.now() - seekSince > 800) { seekSince = 0; wakeVideo(); }
+    return;
+  }
+  seekSince = 0;
+  if (video.readyState >= 2 && Math.abs(video.currentTime - videoTarget) > 0.02) {
     video.currentTime += (videoTarget - video.currentTime) * 0.35;
   }
 });
-// iOS will not seek a video that has never played
-addEventListener('touchstart', () => { video.play().then(() => video.pause()).catch(() => {}); }, { once: true, passive: true });
+addEventListener('touchstart', wakeVideo, { once: true, passive: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wakeVideo(); });
 
 // nav flips to light ink through the dark chapters
 ScrollTrigger.create({
   trigger: '#impact', start: 'top 45%', endTrigger: '#survivors', end: 'bottom 55%',
   toggleClass: { targets: document.body, className: 'is-dark' },
-});
-
-// birds lift as the close arrives
-ScrollTrigger.create({
-  trigger: '#close', start: 'top 95%', end: 'bottom bottom',
-  onUpdate: (self) => { closeState.p = self.progress; },
-  onRefresh: (self) => { closeState.p = self.progress; },
 });
 
 /* ------------------------------------------------------------------ the amber */
@@ -1177,9 +1258,12 @@ function initAmber(cv) {
   }
   piece.rotation.set(0.25, -0.5, 0.05);
 
-  const st = { lift: 0, liftT: 0, rx: 0, ry: -0.5, vx: 0, vy: 0, drag: false, px: 0, py: 0, visible: false };
-  stage.addEventListener('pointerenter', () => { st.liftT = 1; });
-  stage.addEventListener('pointerleave', () => { st.liftT = 0; st.drag = false; });
+  const st = { lift: 0, rx: 0, ry: -0.5, vx: 0, vy: 0, drag: false, px: 0, py: 0, visible: false };
+  stage.addEventListener('pointerenter', () => gsap.to(st, { lift: 1, duration: 0.9, ease: 'back.out(1.7)', overwrite: true }));
+  stage.addEventListener('pointerleave', () => {
+    st.drag = false;
+    gsap.to(st, { lift: 0, duration: 0.8, ease: 'power3.out', overwrite: true });
+  });
   stage.addEventListener('pointerdown', (e) => { st.drag = true; st.px = e.clientX; st.py = e.clientY; stage.setPointerCapture(e.pointerId); });
   stage.addEventListener('pointerup', () => { st.drag = false; });
   stage.addEventListener('pointermove', (e) => {
@@ -1205,7 +1289,6 @@ function initAmber(cv) {
   const c2 = new THREE.Clock();
   const draw = () => {
     const t = c2.getElapsedTime();
-    st.lift += (st.liftT - st.lift) * 0.07;
     st.ry += st.vy + (reduced ? 0 : 0.0025);
     st.rx += st.vx;
     st.vx *= 0.92; st.vy *= 0.92;
